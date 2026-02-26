@@ -27,7 +27,7 @@ export default function Header() {
           {/* Logo */}
           <Link to="/" className="flex-shrink-0 flex items-center">
             <img
-              src="/megatel-logo.png"
+              src="/calculator/megatel-logo.png"
               alt="MegaTel"
               className="h-10 w-auto" />
 

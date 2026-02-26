@@ -18,14 +18,14 @@ const NotFound = () =>
 <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
     <h1 className="text-4xl font-bold text-gray-900 mb-4">404</h1>
     <p className="text-gray-600 mb-8">Page not found</p>
-    <a href="/" className="text-primary-600 hover:text-primary-700 font-medium">
+    <a href="/calculator" className="text-primary-600 hover:text-primary-700 font-medium">
       Go back home
     </a>
   </div>;
 
 export function App() {
   return (
-    <Router>
+    <Router basename="/calculator">
       <div className="flex flex-col min-h-screen bg-gray-50 font-sans">
         <Header />
         <main className="flex-grow">

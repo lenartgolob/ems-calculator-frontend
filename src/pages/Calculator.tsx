@@ -676,7 +676,7 @@ export default function Calculator() {
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <a
-                href="/detailed"
+                href="/calculator/detailed"
                 className="inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 shadow-sm transition-colors">
 
                   Go to Detailed Calculator
