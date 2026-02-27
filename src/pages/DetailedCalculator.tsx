@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { processFilesWithAdvancedLogic } from '../utils/advancedCsvProcessor';
 import {
   Battery,
   ChevronRight,
@@ -160,6 +161,7 @@ export default function DetailedCalculator() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [currentStepErrors, setCurrentStepErrors] = useState<ValidationError[]>([]);
   const [desiredStepErrors, setDesiredStepErrors] = useState<ValidationError[]>([]);
+  const [contactStepErrors, setContactStepErrors] = useState<ValidationError[]>([]);
   const [values, setValues] = useState<FormValues>(defaultValues);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
@@ -396,6 +398,183 @@ export default function DetailedCalculator() {
   };
 
 
+  const hasContactError = (loc: string) => contactStepErrors.some((err) => err.loc === loc);
+  const inputClassForContact = (loc: string) => (hasContactError(loc) ? `${inputClass} ${errorInputClass}` : inputClass);
+
+  const isValidEmail = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    return /^\S+@\S+\.\S+$/.test(trimmed);
+  };
+
+  const validateContactStep = (): ValidationError[] => {
+    const errors: ValidationError[] = [];
+    if (!values.email.trim()) {
+      errors.push({ loc: 'contact.email', message: 'Email is required.' });
+    } else if (!isValidEmail(values.email)) {
+      errors.push({ loc: 'contact.email', message: 'Please enter a valid email address.' });
+    }
+    return errors;
+  };
+
+  const processCSVFiles = async (files: File[]) => {
+    const processedData = await processFilesWithAdvancedLogic(files);
+    if (!processedData || processedData.length === 0) {
+      throw new Error('No consumption data found in the uploaded files.');
+    }
+    return processedData.map((row) => ({
+      timestamp: row.timestamp,
+      consumption: row.consumption
+    }));
+  };
+
+  const prepareAPIPayload = (csvData: Array<{ timestamp: string; consumption: number }>) => {
+    const parseMaybeNumber = (value: string) => {
+      const num = parseNumber(value);
+      return num === null ? null : num;
+    };
+
+    return {
+      current_configuration: {
+        pricing: (() => {
+          if (values.tarifa === 'vtmt') {
+            return {
+              tariff_type: 'VT/MT',
+              vt_mt_pricing_periods: values.vtmt_periods.map((period) => ({
+                VT_price: period.vt_cena === '' ? null : parseMaybeNumber(period.vt_cena ?? ''),
+                MT_price: period.mt_cena === '' ? null : parseMaybeNumber(period.mt_cena ?? ''),
+                date_from: null,
+                date_to: null
+              }))
+            };
+          }
+          if (values.tarifa === 'et') {
+            return {
+              tariff_type: 'ET',
+              et_pricing_periods: values.et_periods.map((period) => ({
+                ET_price: period.et_cena === '' ? null : parseMaybeNumber(period.et_cena ?? ''),
+                date_from: null,
+                date_to: null
+              }))
+            };
+          }
+          return {
+            tariff_type: 'Dynamic',
+            dynamic_surcharge: values.pribitek_procent === '' ? null : parseMaybeNumber(values.pribitek_procent)
+          };
+        })(),
+        consumption_data: {
+          raw_data: csvData
+        },
+        power_limits: {
+          high_season: {
+            B1: values.visoka_b1 === '' ? 0 : Number(values.visoka_b1),
+            B2: values.visoka_b2 === '' ? 0 : Number(values.visoka_b2),
+            B3: values.visoka_b3 === '' ? 0 : Number(values.visoka_b3),
+            B4: values.visoka_b4 === '' ? 0 : Number(values.visoka_b4),
+            B5: 0
+          },
+          low_season: {
+            B1: 0,
+            B2: values.nizka_b2 === '' ? 0 : Number(values.nizka_b2),
+            B3: values.nizka_b3 === '' ? 0 : Number(values.nizka_b3),
+            B4: values.nizka_b4 === '' ? 0 : Number(values.nizka_b4),
+            B5: values.nizka_b5 === '' ? 0 : Number(values.nizka_b5)
+          }
+        }
+      },
+      desired_configuration: {
+        pricing: (() => {
+          if (values.prehod === 'prehod_vtmt') {
+            return {
+              tariff_type: 'VT/MT',
+              vt_mt_pricing_periods: values.new_vtmt_periods.map((period) => ({
+                VT_price: period.vt_cena === '' ? null : parseMaybeNumber(period.vt_cena ?? ''),
+                MT_price: period.mt_cena === '' ? null : parseMaybeNumber(period.mt_cena ?? ''),
+                date_from: null,
+                date_to: null
+              }))
+            };
+          }
+          if (values.prehod === 'prehod_et') {
+            return {
+              tariff_type: 'ET',
+              et_pricing_periods: values.new_et_periods.map((period) => ({
+                ET_price: period.et_cena === '' ? null : parseMaybeNumber(period.et_cena ?? ''),
+                date_from: null,
+                date_to: null
+              }))
+            };
+          }
+          return {
+            tariff_type: 'Dynamic',
+            dynamic_surcharge: values.new_dynamic_surcharge === '' ? null : parseMaybeNumber(values.new_dynamic_surcharge),
+            surplus_price_eur: null
+          };
+        })(),
+        sell_pricing: values.enable_sell_pricing
+          ? (() => {
+              if (values.sell_pricing_type === 'sell_vtmt') {
+                return {
+                  tariff_type: 'VT/MT',
+                  vt_mt_pricing_periods: values.sell_vtmt_periods.map((period) => ({
+                    VT_price: period.vt_cena === '' ? null : parseMaybeNumber(period.vt_cena ?? ''),
+                    MT_price: period.mt_cena === '' ? null : parseMaybeNumber(period.mt_cena ?? ''),
+                    date_from: null,
+                    date_to: null
+                  }))
+                };
+              }
+              if (values.sell_pricing_type === 'sell_et') {
+                return {
+                  tariff_type: 'ET',
+                  et_pricing_periods: values.sell_et_periods.map((period) => ({
+                    ET_price: period.et_cena === '' ? null : parseMaybeNumber(period.et_cena ?? ''),
+                    date_from: null,
+                    date_to: null
+                  }))
+                };
+              }
+              return {
+                tariff_type: 'Dynamic',
+                dynamic_surcharge: values.sell_dynamic_surcharge === '' ? null : parseMaybeNumber(values.sell_dynamic_surcharge)
+              };
+            })()
+          : null,
+        battery: values.konf_baterija === 'konf_baterija_da'
+          ? {
+              capacity_kwh: values.konf_baterija_kapaciteta_vrednost === ''
+                ? null
+                : parseMaybeNumber(values.konf_baterija_kapaciteta_vrednost),
+              max_charge_power_kw: values.konf_max_moc_polnjenje === '' ? null : parseMaybeNumber(values.konf_max_moc_polnjenje),
+              max_discharge_power_kw: values.konf_max_moc_praznjenje === '' ? null : parseMaybeNumber(values.konf_max_moc_praznjenje),
+              charge_efficiency: ((values.konf_charge_efficiency === '' ? 95 : (parseMaybeNumber(values.konf_charge_efficiency) ?? 95)) / 100),
+              discharge_efficiency: ((values.konf_discharge_efficiency === '' ? 95 : (parseMaybeNumber(values.konf_discharge_efficiency) ?? 95)) / 100),
+              initial_soc_pct: values.konf_initial_soc_pct === '' ? 100 : (parseMaybeNumber(values.konf_initial_soc_pct) ?? 100),
+              min_soc_pct: values.konf_min_soc_pct === '' ? 10 : (parseMaybeNumber(values.konf_min_soc_pct) ?? 10)
+            }
+          : null,
+        solar_plant: values.konf_soncna === 'konf_soncna_da'
+          ? {
+              max_production: (values.konf_soncna_moc === '' || values.konf_soncna_paneli === '')
+                ? null
+                : (((parseMaybeNumber(values.konf_soncna_moc) ?? 0) * (parseMaybeNumber(values.konf_soncna_paneli) ?? 0)) / 1000),
+              surface_tilt: values.surface_tilt === '' ? null : parseMaybeNumber(values.surface_tilt),
+              surface_azimuth: values.surface_azimuth === 'custom'
+                ? (values.surface_azimuth_custom === '' ? null : parseMaybeNumber(values.surface_azimuth_custom))
+                : (values.surface_azimuth === '' ? null : parseMaybeNumber(values.surface_azimuth)),
+              address: {
+                latitude: values.latitude === '' ? null : parseMaybeNumber(values.latitude),
+                longitude: values.longitude === '' ? null : parseMaybeNumber(values.longitude),
+                altitude: values.altitude === '' ? null : parseMaybeNumber(values.altitude)
+              }
+            }
+          : null
+      },
+      email: values.email.trim()
+    };
+  };
+
   const updatePeriodValue = (
     key: 'vtmt_periods' | 'et_periods' | 'new_vtmt_periods' | 'new_et_periods' | 'sell_vtmt_periods' | 'sell_et_periods',
     index: number,
@@ -509,10 +688,32 @@ export default function DetailedCalculator() {
     if (activeTab !== 'contact') {
       return;
     }
+
+    const errors = validateContactStep();
+    if (errors.length > 0) {
+      setContactStepErrors(errors);
+      return;
+    }
+    setContactStepErrors([]);
+
     setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    setIsSubmitting(false);
-    navigate('/status');
+    try {
+      const processedData = await processCSVFiles(values.csv_files);
+      const apiPayload = prepareAPIPayload(processedData);
+
+      sessionStorage.setItem('formEmail', values.email.trim());
+      sessionStorage.setItem('apiPayload', JSON.stringify(apiPayload));
+      const { csv_files, ...serializableValues } = values;
+      sessionStorage.setItem('formValues', JSON.stringify(serializableValues));
+
+      navigate('/status');
+    } catch (error: any) {
+      const message = error?.message || 'Failed to prepare the request. Please check your files and try again.';
+      setContactStepErrors([{ loc: 'contact.submit', message }]);
+      console.error('Submission error:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const stepLabel = useMemo(() => {
@@ -544,6 +745,7 @@ export default function DetailedCalculator() {
 
   const goBack = () => {
     if (activeTab === 'contact') {
+      setContactStepErrors([]);
       setActiveTab('desired');
     } else if (activeTab === 'desired') {
       setCurrentStepErrors([]);
@@ -590,7 +792,7 @@ export default function DetailedCalculator() {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-8 md:p-10 space-y-10">
+          <form onSubmit={handleSubmit} noValidate className="p-8 md:p-10 space-y-10">
             {activeTab === 'current' && (
               <>
                 {currentStepErrors.length > 0 && (
@@ -1359,6 +1561,16 @@ export default function DetailedCalculator() {
 
             {activeTab === 'contact' && (
               <>
+                {contactStepErrors.length > 0 && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    <p className="font-semibold">Please fix the following issues:</p>
+                    <ul className="mt-2 list-disc pl-5 space-y-1">
+                      {contactStepErrors.map((err, idx) => (
+                        <li key={`${err.loc}-${idx}`}>{err.message}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="space-y-6">
                   <div className="flex items-start justify-between gap-6">
                     <div>
@@ -1377,8 +1589,8 @@ export default function DetailedCalculator() {
                   <div className="max-w-md">
                     <label className={labelClass}>Email address</label>
                     <input
-                      type="email"
-                      className={inputClass}
+                      type="text"
+                      className={inputClassForContact('contact.email')}
                       value={values.email}
                       onChange={(e) => updateValue('email', e.target.value)}
                       placeholder="you@example.com"

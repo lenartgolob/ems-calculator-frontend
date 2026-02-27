@@ -16,7 +16,9 @@
     "react-router-dom": "^6.26.2",
     "react-i18next": "^15.4.0",
     "lucide-react": "0.522.0",
-    "recharts": "^2.12.7"
+    "recharts": "^2.12.7",
+    "papaparse": "^5.4.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^20.11.18",
